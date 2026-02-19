@@ -640,6 +640,42 @@ fn filter_parsed_messages(
     filtered
 }
 
+/// Calculate final cost with fallback to original cost when pricing returns 0.0 (for ParsedMessage)
+fn apply_pricing_cost(msg: &ParsedMessage, pricing: &pricing::PricingService) -> f64 {
+    let original_cost = msg.cost;
+    let calculated_cost = pricing.calculate_cost(
+        &msg.model_id,
+        msg.input,
+        msg.output,
+        msg.cache_read,
+        msg.cache_write,
+        msg.reasoning,
+    );
+    if calculated_cost > 0.0 {
+        calculated_cost
+    } else {
+        original_cost
+    }
+}
+
+/// Calculate final cost with fallback to original cost when pricing returns 0.0 (for UnifiedMessage)
+fn apply_pricing_cost_unified(msg: &UnifiedMessage, pricing: &pricing::PricingService) -> f64 {
+    let original_cost = msg.cost;
+    let calculated_cost = pricing.calculate_cost(
+        &msg.model_id,
+        msg.tokens.input,
+        msg.tokens.output,
+        msg.tokens.cache_read,
+        msg.tokens.cache_write,
+        msg.tokens.reasoning,
+    );
+    if calculated_cost > 0.0 {
+        calculated_cost
+    } else {
+        original_cost
+    }
+}
+
 fn parsed_to_unified(msg: &ParsedMessage, cost: f64) -> UnifiedMessage {
     UnifiedMessage {
         source: msg.source.clone(),
@@ -677,23 +713,7 @@ pub async fn finalize_report(options: FinalizeReportOptions) -> napi::Result<Mod
         .local_messages
         .messages
         .iter()
-        .map(|msg| {
-            let original_cost = msg.cost;
-            let calculated_cost = pricing.calculate_cost(
-                &msg.model_id,
-                msg.input,
-                msg.output,
-                msg.cache_read,
-                msg.cache_write,
-                msg.reasoning,
-            );
-            let final_cost = if calculated_cost > 0.0 {
-                calculated_cost
-            } else {
-                original_cost
-            };
-            parsed_to_unified(msg, final_cost)
-        })
+        .map(|msg| parsed_to_unified(msg, apply_pricing_cost(msg, &pricing)))
         .collect();
 
     // Add Cursor messages if enabled
@@ -707,20 +727,7 @@ pub async fn finalize_report(options: FinalizeReportOptions) -> napi::Result<Mod
                 sessions::cursor::parse_cursor_file(path)
                     .into_iter()
                     .map(|mut msg| {
-                        let csv_cost = msg.cost;
-                        let calculated_cost = pricing.calculate_cost(
-                            &msg.model_id,
-                            msg.tokens.input,
-                            msg.tokens.output,
-                            msg.tokens.cache_read,
-                            msg.tokens.cache_write,
-                            msg.tokens.reasoning,
-                        );
-                        msg.cost = if calculated_cost > 0.0 {
-                            calculated_cost
-                        } else {
-                            csv_cost
-                        };
+                        msg.cost = apply_pricing_cost_unified(&msg, &pricing);
                         msg
                     })
                     .collect::<Vec<_>>()
@@ -832,23 +839,7 @@ pub async fn finalize_monthly_report(options: FinalizeMonthlyOptions) -> napi::R
         .local_messages
         .messages
         .iter()
-        .map(|msg| {
-            let original_cost = msg.cost;
-            let calculated_cost = pricing.calculate_cost(
-                &msg.model_id,
-                msg.input,
-                msg.output,
-                msg.cache_read,
-                msg.cache_write,
-                msg.reasoning,
-            );
-            let final_cost = if calculated_cost > 0.0 {
-                calculated_cost
-            } else {
-                original_cost
-            };
-            parsed_to_unified(msg, final_cost)
-        })
+        .map(|msg| parsed_to_unified(msg, apply_pricing_cost(msg, &pricing)))
         .collect();
 
     // Add Cursor messages if enabled
@@ -862,20 +853,7 @@ pub async fn finalize_monthly_report(options: FinalizeMonthlyOptions) -> napi::R
                 sessions::cursor::parse_cursor_file(path)
                     .into_iter()
                     .map(|mut msg| {
-                        let csv_cost = msg.cost;
-                        let calculated_cost = pricing.calculate_cost(
-                            &msg.model_id,
-                            msg.tokens.input,
-                            msg.tokens.output,
-                            msg.tokens.cache_read,
-                            msg.tokens.cache_write,
-                            msg.tokens.reasoning,
-                        );
-                        msg.cost = if calculated_cost > 0.0 {
-                            calculated_cost
-                        } else {
-                            csv_cost
-                        };
+                        msg.cost = apply_pricing_cost_unified(&msg, &pricing);
                         msg
                     })
                     .collect::<Vec<_>>()
@@ -885,17 +863,19 @@ pub async fn finalize_monthly_report(options: FinalizeMonthlyOptions) -> napi::R
         all_messages.extend(cursor_messages);
     }
 
-    // Apply date filters
-    apply_date_filters(
-        &mut all_messages,
-        options.since_ts,
-        options.until_ts,
-        &options.since,
-        &options.until,
-        &options.year,
-        |m| m.timestamp,
-        |m| m.date.as_str(),
-    );
+    // Apply date filters to cursor messages (local already filtered)
+    if options.include_cursor {
+        apply_date_filters(
+            &mut all_messages,
+            options.since_ts,
+            options.until_ts,
+            &options.since,
+            &options.until,
+            &options.year,
+            |m| m.timestamp,
+            |m| m.date.as_str(),
+        );
+    }
 
     // Aggregate by month
     let mut month_map: std::collections::HashMap<String, MonthAggregator> =
@@ -972,23 +952,7 @@ pub async fn finalize_graph(options: FinalizeGraphOptions) -> napi::Result<Graph
         .local_messages
         .messages
         .iter()
-        .map(|msg| {
-            let original_cost = msg.cost;
-            let calculated_cost = pricing.calculate_cost(
-                &msg.model_id,
-                msg.input,
-                msg.output,
-                msg.cache_read,
-                msg.cache_write,
-                msg.reasoning,
-            );
-            let final_cost = if calculated_cost > 0.0 {
-                calculated_cost
-            } else {
-                original_cost
-            };
-            parsed_to_unified(msg, final_cost)
-        })
+        .map(|msg| parsed_to_unified(msg, apply_pricing_cost(msg, &pricing)))
         .collect();
 
     // Add Cursor messages if enabled
@@ -1002,20 +966,7 @@ pub async fn finalize_graph(options: FinalizeGraphOptions) -> napi::Result<Graph
                 sessions::cursor::parse_cursor_file(path)
                     .into_iter()
                     .map(|mut msg| {
-                        let csv_cost = msg.cost;
-                        let calculated_cost = pricing.calculate_cost(
-                            &msg.model_id,
-                            msg.tokens.input,
-                            msg.tokens.output,
-                            msg.tokens.cache_read,
-                            msg.tokens.cache_write,
-                            msg.tokens.reasoning,
-                        );
-                        msg.cost = if calculated_cost > 0.0 {
-                            calculated_cost
-                        } else {
-                            csv_cost
-                        };
+                        msg.cost = apply_pricing_cost_unified(&msg, &pricing);
                         msg
                     })
                     .collect::<Vec<_>>()
@@ -1067,28 +1018,12 @@ pub async fn finalize_report_and_graph(options: FinalizeReportOptions) -> napi::
         .await
         .map_err(|e| napi::Error::from_reason(e))?;
 
-    // Convert local messages and apply pricing (once)
+    // Convert local messages and apply pricing
     let mut all_messages: Vec<UnifiedMessage> = options
         .local_messages
         .messages
         .iter()
-        .map(|msg| {
-            let original_cost = msg.cost;
-            let calculated_cost = pricing.calculate_cost(
-                &msg.model_id,
-                msg.input,
-                msg.output,
-                msg.cache_read,
-                msg.cache_write,
-                msg.reasoning,
-            );
-            let final_cost = if calculated_cost > 0.0 {
-                calculated_cost
-            } else {
-                original_cost
-            };
-            parsed_to_unified(msg, final_cost)
-        })
+        .map(|msg| parsed_to_unified(msg, apply_pricing_cost(msg, &pricing)))
         .collect();
 
     // Add Cursor messages if enabled
@@ -1102,20 +1037,7 @@ pub async fn finalize_report_and_graph(options: FinalizeReportOptions) -> napi::
                 sessions::cursor::parse_cursor_file(path)
                     .into_iter()
                     .map(|mut msg| {
-                        let csv_cost = msg.cost;
-                        let calculated_cost = pricing.calculate_cost(
-                            &msg.model_id,
-                            msg.tokens.input,
-                            msg.tokens.output,
-                            msg.tokens.cache_read,
-                            msg.tokens.cache_write,
-                            msg.tokens.reasoning,
-                        );
-                        msg.cost = if calculated_cost > 0.0 {
-                            calculated_cost
-                        } else {
-                            csv_cost
-                        };
+                        msg.cost = apply_pricing_cost_unified(&msg, &pricing);
                         msg
                     })
                     .collect::<Vec<_>>()
