@@ -14,6 +14,7 @@ use crate::clients::ClientId;
 pub struct ScanResult {
     pub files: [Vec<PathBuf>; ClientId::COUNT],
     pub opencode_db: Option<PathBuf>,
+    pub synthetic_db: Option<PathBuf>,
     /// Path to the OpenCode legacy JSON directory (for migration cache stat checks)
     pub opencode_json_dir: Option<PathBuf>,
 }
@@ -23,6 +24,7 @@ impl Default for ScanResult {
         Self {
             files: std::array::from_fn(|_| Vec::new()),
             opencode_db: None,
+            synthetic_db: None,
             opencode_json_dir: None,
         }
     }
@@ -144,7 +146,10 @@ pub fn scan_directory(root: &str, pattern: &str) -> Vec<PathBuf> {
 pub fn scan_all_clients(home_dir: &str, clients: &[String]) -> ScanResult {
     let mut result = ScanResult::default();
 
-    let enabled: HashSet<ClientId> = if clients.is_empty() {
+    let include_all = clients.is_empty();
+    let include_synthetic = include_all || clients.iter().any(|s| s == "synthetic");
+
+    let enabled: HashSet<ClientId> = if include_all || include_synthetic {
         ClientId::iter().collect()
     } else {
         clients
@@ -248,6 +253,15 @@ pub fn scan_all_clients(home_dir: &str, clients: &[String]) -> ScanResult {
             moldbot_path,
             ClientId::OpenClaw.data().pattern,
         ));
+    }
+
+    if include_synthetic {
+        let xdg_data =
+            std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{}/.local/share", home_dir));
+        let octofriend_db_path = PathBuf::from(format!("{}/octofriend/sqlite.db", xdg_data));
+        if octofriend_db_path.exists() {
+            result.synthetic_db = Some(octofriend_db_path);
+        }
     }
 
     if enabled.contains(&ClientId::RooCode) {

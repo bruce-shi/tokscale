@@ -36,6 +36,7 @@ export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   pi: "Pi",
   kimi: "Kimi",
   qwen: "Qwen",
+  synthetic: "Synthetic",
 };
 
 // Client logos from GitHub CDN (public repo)
@@ -52,6 +53,7 @@ export const SOURCE_LOGOS: Record<string, string> = {
   pi: `${GITHUB_CDN_BASE}/client-pi.png`,
   kimi: `${GITHUB_CDN_BASE}/client-kimi.png`,
   qwen: `${GITHUB_CDN_BASE}/client-qwen.png`,
+  synthetic: `${GITHUB_CDN_BASE}/client-synthetic.png`,
 };
 
 export const SOURCE_COLORS: Record<string, string> = {
@@ -66,6 +68,7 @@ export const SOURCE_COLORS: Record<string, string> = {
   pi: "#6366F1",
   kimi: "#8B5CF6",
   qwen: "#1A73E8",
+  synthetic: "#4ADE80",
 };
 
 export const SOURCE_TEXT_COLORS: Record<string, string> = {
