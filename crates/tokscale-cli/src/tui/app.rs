@@ -350,10 +350,12 @@ impl App {
                 }
             }
             KeyCode::Esc => {
-                self.selected_graph_cell = None;
-                self.stats_breakdown_total_lines = 0;
-                self.selected_index = 0;
-                self.scroll_offset = 0;
+                if self.selected_graph_cell.is_some() {
+                    self.selected_graph_cell = None;
+                    self.stats_breakdown_total_lines = 0;
+                    self.selected_index = 0;
+                    self.scroll_offset = 0;
+                }
             }
             _ => {}
         }
