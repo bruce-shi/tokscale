@@ -368,34 +368,43 @@ impl App {
             return;
         }
 
-        if let MouseEventKind::Down(MouseButton::Left) = event.kind {
-            let x = event.column;
-            let y = event.row;
+        match event.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let x = event.column;
+                let y = event.row;
 
-            for area in &self.click_areas {
-                if x >= area.rect.x
-                    && x < area.rect.x + area.rect.width
-                    && y >= area.rect.y
-                    && y < area.rect.y + area.rect.height
-                {
-                    match &area.action {
-                        ClickAction::Tab(tab) => {
-                            self.current_tab = *tab;
-                            self.reset_selection();
+                for area in &self.click_areas {
+                    if x >= area.rect.x
+                        && x < area.rect.x + area.rect.width
+                        && y >= area.rect.y
+                        && y < area.rect.y + area.rect.height
+                    {
+                        match &area.action {
+                            ClickAction::Tab(tab) => {
+                                self.current_tab = *tab;
+                                self.reset_selection();
+                            }
+                            ClickAction::Sort(field) => {
+                                self.set_sort(*field);
+                            }
+                            ClickAction::GraphCell { week, day } => {
+                                self.selected_graph_cell = Some((*week, *day));
+                                self.stats_breakdown_total_lines = 0;
+                                self.selected_index = 0;
+                                self.scroll_offset = 0;
+                            }
                         }
-                        ClickAction::Sort(field) => {
-                            self.set_sort(*field);
-                        }
-                        ClickAction::GraphCell { week, day } => {
-                            self.selected_graph_cell = Some((*week, *day));
-                            self.stats_breakdown_total_lines = 0;
-                            self.selected_index = 0;
-                            self.scroll_offset = 0;
-                        }
+                        break;
                     }
-                    break;
                 }
             }
+            MouseEventKind::ScrollUp => {
+                self.move_selection_up();
+            }
+            MouseEventKind::ScrollDown => {
+                self.move_selection_down();
+            }
+            _ => {}
         }
     }
 
@@ -1468,7 +1477,7 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         };
         app.handle_mouse_event(event);
-        assert_eq!(app.selected_index, 2);
+        assert_eq!(app.selected_index, 1);
     }
 
     #[test]
@@ -1483,7 +1492,7 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         };
         app.handle_mouse_event(event);
-        assert_eq!(app.selected_index, 2);
+        assert_eq!(app.selected_index, 3);
     }
 
     // ── handle_resize ───────────────────────────────────────────────
