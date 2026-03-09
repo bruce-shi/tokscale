@@ -46,6 +46,56 @@ pub struct CodexTokenUsage {
     pub output_tokens: Option<i64>,
     pub cached_input_tokens: Option<i64>,
     pub cache_read_input_tokens: Option<i64>,
+    pub reasoning_output_tokens: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct CodexTotals {
+    input: i64,
+    output: i64,
+    cached: i64,
+    reasoning: i64,
+}
+
+impl CodexTotals {
+    fn from_usage(usage: &CodexTokenUsage) -> Self {
+        Self {
+            input: usage.input_tokens.unwrap_or(0),
+            output: usage.output_tokens.unwrap_or(0),
+            cached: usage
+                .cached_input_tokens
+                .or(usage.cache_read_input_tokens)
+                .unwrap_or(0),
+            reasoning: usage.reasoning_output_tokens.unwrap_or(0),
+        }
+    }
+
+    fn delta_from(self, previous: Self) -> Option<Self> {
+        if self.input < previous.input
+            || self.output < previous.output
+            || self.cached < previous.cached
+            || self.reasoning < previous.reasoning
+        {
+            return None;
+        }
+
+        Some(Self {
+            input: self.input - previous.input,
+            output: self.output - previous.output,
+            cached: self.cached - previous.cached,
+            reasoning: self.reasoning - previous.reasoning,
+        })
+    }
+
+    fn into_tokens(self) -> TokenBreakdown {
+        TokenBreakdown {
+            input: (self.input - self.cached).max(0),
+            output: self.output.max(0),
+            cache_read: self.cached.max(0),
+            cache_write: 0,
+            reasoning: self.reasoning.max(0),
+        }
+    }
 }
 
 /// Parse a Codex JSONL file with stateful tracking
@@ -68,7 +118,7 @@ pub fn parse_codex_file(path: &Path) -> Vec<UnifiedMessage> {
     let mut buffer = Vec::with_capacity(4096);
 
     let mut current_model: Option<String> = None;
-    let mut previous_totals: Option<(i64, i64, i64)> = None;
+    let mut previous_totals: Option<CodexTotals> = None;
     let mut session_is_headless = false;
 
     for line in reader.lines() {
@@ -120,55 +170,38 @@ pub fn parse_codex_file(path: &Path) -> Vec<UnifiedMessage> {
                         .clone()
                         .unwrap_or_else(|| "unknown".to_string());
 
-                    // Calculate delta tokens
-                    // Note: OpenAI's input_tokens INCLUDES cached tokens (they are a subset).
-                    // We subtract cached from input to avoid double-counting when aggregating.
-                    let (input, output, cached) = if let Some(last) = &info.last_token_usage {
-                        let total_input = last.input_tokens.unwrap_or(0);
-                        let cached = last
-                            .cached_input_tokens
-                            .or(last.cache_read_input_tokens)
-                            .unwrap_or(0);
-                        (
-                            total_input.saturating_sub(cached),
-                            last.output_tokens.unwrap_or(0),
-                            cached,
-                        )
-                    } else if let (Some(total), Some(prev)) =
-                        (&info.total_token_usage, &previous_totals)
-                    {
-                        let curr_input = total.input_tokens.unwrap_or(0);
-                        let curr_output = total.output_tokens.unwrap_or(0);
-                        let curr_cached = total
-                            .cached_input_tokens
-                            .or(total.cache_read_input_tokens)
-                            .unwrap_or(0);
+                    // Prefer cumulative totals when available so repeated snapshot rows do not
+                    // re-count the same usage. Fall back to last-token usage when totals are
+                    // missing or appear to reset.
+                    let total_usage = info.total_token_usage.as_ref().map(CodexTotals::from_usage);
+                    let last_usage = info.last_token_usage.as_ref().map(CodexTotals::from_usage);
 
-                        let delta_input = (curr_input - prev.0).max(0);
-                        let delta_cached = (curr_cached - prev.2).max(0);
-                        (
-                            (delta_input - delta_cached).max(0),
-                            (curr_output - prev.1).max(0),
-                            delta_cached,
-                        )
+                    let tokens = if let Some(total) = total_usage {
+                        match previous_totals {
+                            Some(previous) => total
+                                .delta_from(previous)
+                                .or(last_usage)
+                                .unwrap_or(total)
+                                .into_tokens(),
+                            None => total.into_tokens(),
+                        }
+                    } else if let Some(last) = last_usage {
+                        last.into_tokens()
                     } else {
                         continue;
                     };
 
                     // Update previous totals
-                    if let Some(total) = &info.total_token_usage {
-                        previous_totals = Some((
-                            total.input_tokens.unwrap_or(0),
-                            total.output_tokens.unwrap_or(0),
-                            total
-                                .cached_input_tokens
-                                .or(total.cache_read_input_tokens)
-                                .unwrap_or(0),
-                        ));
+                    if let Some(total) = total_usage {
+                        previous_totals = Some(total);
                     }
 
                     // Skip empty deltas
-                    if input == 0 && output == 0 && cached == 0 {
+                    if tokens.input == 0
+                        && tokens.output == 0
+                        && tokens.cache_read == 0
+                        && tokens.reasoning == 0
+                    {
                         continue;
                     }
 
@@ -190,13 +223,7 @@ pub fn parse_codex_file(path: &Path) -> Vec<UnifiedMessage> {
                         "openai",
                         session_id.clone(),
                         timestamp,
-                        TokenBreakdown {
-                            input: input.max(0),
-                            output: output.max(0),
-                            cache_read: cached.max(0),
-                            cache_write: 0,
-                            reasoning: 0,
-                        },
+                        tokens,
                         0.0,
                         agent,
                     ));
@@ -401,5 +428,43 @@ mod tests {
 
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].agent.as_deref(), Some("headless"));
+    }
+
+    #[test]
+    fn test_token_count_uses_total_deltas_when_totals_repeat() {
+        let line1 = r#"{"timestamp":"2026-01-01T00:00:00Z","type":"turn_context","payload":{"model":"gpt-5.2"}}"#;
+        let line2 = r#"{"timestamp":"2026-01-01T00:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":30,"reasoning_output_tokens":5},"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":30,"reasoning_output_tokens":5}}}}"#;
+        let line3 = r#"{"timestamp":"2026-01-01T00:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":30,"reasoning_output_tokens":5},"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":30,"reasoning_output_tokens":5}}}}"#;
+        let content = format!("{}\n{}\n{}", line1, line2, line3);
+        let file = create_test_file(&content);
+
+        let messages = parse_codex_file(file.path());
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].tokens.input, 80);
+        assert_eq!(messages[0].tokens.output, 30);
+        assert_eq!(messages[0].tokens.cache_read, 20);
+        assert_eq!(messages[0].tokens.reasoning, 5);
+    }
+
+    #[test]
+    fn test_token_count_falls_back_to_last_usage_when_totals_reset() {
+        let line1 = r#"{"timestamp":"2026-01-01T00:00:00Z","type":"turn_context","payload":{"model":"gpt-5.2"}}"#;
+        let line2 = r#"{"timestamp":"2026-01-01T00:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":30,"reasoning_output_tokens":5},"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":30,"reasoning_output_tokens":5}}}}"#;
+        let line3 = r#"{"timestamp":"2026-01-01T00:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3,"reasoning_output_tokens":1},"last_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3,"reasoning_output_tokens":1}}}}"#;
+        let content = format!("{}\n{}\n{}", line1, line2, line3);
+        let file = create_test_file(&content);
+
+        let messages = parse_codex_file(file.path());
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].tokens.input, 80);
+        assert_eq!(messages[0].tokens.output, 30);
+        assert_eq!(messages[0].tokens.cache_read, 20);
+        assert_eq!(messages[0].tokens.reasoning, 5);
+        assert_eq!(messages[1].tokens.input, 8);
+        assert_eq!(messages[1].tokens.output, 3);
+        assert_eq!(messages[1].tokens.cache_read, 2);
+        assert_eq!(messages[1].tokens.reasoning, 1);
     }
 }
