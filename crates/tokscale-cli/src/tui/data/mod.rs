@@ -152,12 +152,11 @@ impl DataLoader {
         let messages = if Handle::try_current().is_ok() {
             std::thread::scope(|s| {
                 s.spawn(|| {
-                    Runtime::new()
-                        .expect("failed to create tokio runtime")
-                        .block_on(parse_local_unified_messages(opts))
+                    let rt = Runtime::new().map_err(|e| e.to_string())?;
+                    rt.block_on(parse_local_unified_messages(opts))
                 })
                 .join()
-                .expect("data loader thread panicked")
+                .unwrap_or_else(|_| Err("data loader thread panicked".to_string()))
             })
         } else {
             Runtime::new()?.block_on(parse_local_unified_messages(opts))
