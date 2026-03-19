@@ -552,6 +552,16 @@ fn parse_all_messages_with_pricing(
         .collect();
     all_messages.extend(mux_messages);
 
+    let antigravity_messages: Vec<UnifiedMessage> =
+        sessions::antigravity::parse_antigravity_files(scan_result.get(ClientId::Antigravity))
+            .into_iter()
+            .map(|mut msg| {
+                apply_pricing_if_available(&mut msg, pricing);
+                msg
+            })
+            .collect();
+    all_messages.extend(antigravity_messages);
+
     if include_synthetic {
         if let Some(db_path) = &scan_result.synthetic_db {
             let synthetic_messages: Vec<UnifiedMessage> =
@@ -1162,6 +1172,15 @@ pub fn parse_local_clients(options: LocalParseOptions) -> Result<ParsedMessages,
     let mux_count = mux_msgs.len() as i32;
     counts.set(ClientId::Mux, mux_count);
     messages.extend(mux_msgs);
+
+    let antigravity_msgs: Vec<ParsedMessage> =
+        sessions::antigravity::parse_antigravity_files(scan_result.get(ClientId::Antigravity))
+            .into_iter()
+            .map(|msg| unified_to_parsed(&msg))
+            .collect();
+    let antigravity_count = antigravity_msgs.len() as i32;
+    counts.set(ClientId::Antigravity, antigravity_count);
+    messages.extend(antigravity_msgs);
 
     if include_synthetic {
         if let Some(db_path) = &scan_result.synthetic_db {

@@ -14,6 +14,18 @@ static MODEL_ALIASES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // Synthetic model variants (only where resolver needs help)
     m.insert("kimi-k2.5-nvfp4", "kimi-k2.5"); // Quantization variant → base model pricing
     m.insert("kimi-k2-instruct-0905", "kimi-k2.5"); // Specific version → base (avoids reseller)
+
+    // Antigravity (Windsurf) model variants
+    m.insert("claude-opus-4-6-thinking", "claude-opus-4.6");
+    m.insert("claude-sonnet-4-6-thinking", "claude-sonnet-4.6");
+    m.insert("gemini-3.1-pro-high", "gemini-3.1-pro");
+    m.insert("gemini-3.1-pro-low", "gemini-3.1-pro");
+    m.insert("gemini-3-pro-high", "gemini-3-pro");
+    m.insert("gemini-3-pro-low", "gemini-3-pro");
+    m.insert("gemini-3-flash-c", "gemini-3-flash");
+    m.insert("claude-opus-4-6", "claude-opus-4.6");
+    m.insert("claude-sonnet-4-6", "claude-sonnet-4.6");
+    m.insert("claude-haiku-4-6", "claude-haiku-4.6");
     m
 });
 

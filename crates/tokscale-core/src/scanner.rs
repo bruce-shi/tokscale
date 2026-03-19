@@ -140,6 +140,7 @@ pub fn scan_directory(root: &str, pattern: &str) -> Vec<PathBuf> {
                 "wire.jsonl" => file_name == "wire.jsonl",
                 "ui_messages.json" => file_name == "ui_messages.json",
                 "session-usage.json" => file_name == "session-usage.json",
+                "*.pb" => file_name.ends_with(".pb"),
                 _ => false,
             }
         })
