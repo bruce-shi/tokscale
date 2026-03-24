@@ -2158,6 +2158,76 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
+    fn test_source_cache_matches_cold_parse_after_malformed_json_append() {
+        let cache_home = tempfile::TempDir::new().unwrap();
+        let fresh_cache_home = tempfile::TempDir::new().unwrap();
+        let source_home = tempfile::TempDir::new().unwrap();
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", cache_home.path());
+
+        {
+            let codex_dir = source_home.path().join(".codex/sessions");
+            std::fs::create_dir_all(&codex_dir).unwrap();
+            let path = codex_dir.join("session.jsonl");
+            std::fs::write(
+                &path,
+                concat!(
+                    r#"{"type":"turn_context","payload":{"model":"gpt-5.4"}}"#,
+                    "\n",
+                    r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3},"last_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}}}"#,
+                    "\n",
+                    r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":999""#,
+                    "\n"
+                ),
+            )
+            .unwrap();
+
+            let initial_messages = parse_all_messages_with_pricing(
+                source_home.path().to_str().unwrap(),
+                &["codex".to_string()],
+                None,
+            );
+            assert_eq!(initial_messages.len(), 1);
+
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+            file.write_all(
+                concat!(
+                    r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":15,"cached_input_tokens":3,"output_tokens":5},"last_token_usage":{"input_tokens":5,"cached_input_tokens":1,"output_tokens":2}}}}"#,
+                    "\n"
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            file.flush().unwrap();
+
+            let warm_messages = parse_all_messages_with_pricing(
+                source_home.path().to_str().unwrap(),
+                &["codex".to_string()],
+                None,
+            );
+
+            std::env::set_var("HOME", fresh_cache_home.path());
+            let fresh_messages = parse_all_messages_with_pricing(
+                source_home.path().to_str().unwrap(),
+                &["codex".to_string()],
+                None,
+            );
+
+            assert_eq!(warm_messages, fresh_messages);
+        }
+
+        match original_home {
+            Some(home) => std::env::set_var("HOME", home),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
     fn test_exact_hit_codex_cache_repairs_fallback_timestamps_without_incremental_state() {
         let cache_home = tempfile::TempDir::new().unwrap();
         let source_home = tempfile::TempDir::new().unwrap();
