@@ -321,7 +321,7 @@ jobs:
       - name: Publish platform package
         working-directory: packages/${{ matrix.settings.package_dir }}
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
           echo "📦 Publishing ${{ matrix.settings.package_name }} version: $(jq -r '.version' package.json)"
           npm publish --access public
         env:
@@ -357,7 +357,7 @@ jobs:
       - name: Publish @tokscale/cli
         working-directory: packages/cli
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
           echo "📦 Publishing version: $(jq -r '.version' package.json)"
           npm publish --access public
         env:
@@ -385,7 +385,7 @@ jobs:
       - name: Publish tokscale
         working-directory: packages/tokscale
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
           echo "📦 Publishing version: $(jq -r '.version' package.json)"
           npm publish --access public
         env:

@@ -20,7 +20,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/junhoyeo/tokscale.git",
+    "url": "git+https://github.com/junhoyeo/tokscale.git",
     "directory": "packages/cli-win32-arm64-msvc"
   }
 }
