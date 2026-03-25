@@ -220,7 +220,15 @@ define_clients!(
         headless: false,
         parse_local: true
     },
-    Antigravity = 14 => {
+    Kilo = 14 => {
+        id: "kilo",
+        root: PathRoot::XdgData,
+        relative: "kilo/kilo.db",
+        pattern: "kilo.db",
+        headless: false,
+        parse_local: true
+    },
+    Antigravity = 15 => {
         id: "antigravity",
         root: PathRoot::Home,
         relative: ".gemini/antigravity/conversations",
@@ -279,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_client_id_count() {
-        assert_eq!(ClientId::COUNT, 15);
+        assert_eq!(ClientId::COUNT, 16);
     }
 
     #[test]
